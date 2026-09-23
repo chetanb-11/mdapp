@@ -1,31 +1,29 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import Sidebar from "./components/Sidebar";
 import NoteEditor from "./components/NoteEditor";
 import {
   FileText,
-  FolderOpen,
   Plus,
   ExternalLink,
   Copy,
   Check,
+  FolderOpen,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────
-export interface FileEntry {
+export interface FileNode {
   name: string;
   path: string;
   is_dir: boolean;
-  children: FileEntry[];
+  children: FileNode[];
 }
 
 export type SaveStatus = "idle" | "saved" | "saving" | "unsaved";
 
-// ── App ─────────────────────────────────────────────────────────
+// ── App Component ───────────────────────────────────────────────
 export default function App() {
-  const [rootDir, setRootDir] = useState<string | null>(null);
-  const [fileTree, setFileTree] = useState<FileEntry[]>([]);
+  const [rootNode, setRootNode] = useState<FileNode | null>(null);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [activeFileName, setActiveFileName] = useState<string>("");
   const [markdown, setMarkdown] = useState<string>("");
@@ -34,39 +32,6 @@ export default function App() {
 
   // Debounce timer ref for auto-save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Open Folder ─────────────────────────────────────────────
-  const handleOpenFolder = useCallback(async () => {
-    try {
-      const selected = await open({ directory: true, multiple: false });
-      if (selected && typeof selected === "string") {
-        setRootDir(selected);
-        const tree = await invoke<FileEntry[]>("list_markdown_files", {
-          rootDir: selected,
-        });
-        setFileTree(tree);
-        setActiveFile(null);
-        setActiveFileName("");
-        setMarkdown("");
-        setSaveStatus("idle");
-      }
-    } catch (err) {
-      console.error("Failed to open folder:", err);
-    }
-  }, []);
-
-  // ── Refresh tree (re-scan current directory) ────────────────
-  const refreshTree = useCallback(async () => {
-    if (!rootDir) return;
-    try {
-      const tree = await invoke<FileEntry[]>("list_markdown_files", {
-        rootDir,
-      });
-      setFileTree(tree);
-    } catch (err) {
-      console.error("Failed to refresh tree:", err);
-    }
-  }, [rootDir]);
 
   // ── Open a file ─────────────────────────────────────────────
   const handleFileSelect = useCallback(async (filePath: string, fileName: string) => {
@@ -89,72 +54,118 @@ export default function App() {
     }
   }, []);
 
-  // ── Create New File ─────────────────────────────────────────
-  const handleCreateFile = useCallback(
-    async (fileName?: string) => {
-      try {
-        if (rootDir) {
-          const name = fileName?.trim() || "Untitled.md";
-          const newPath = await invoke<string>("create_markdown_file", {
-            parentDir: rootDir,
-            fileName: name,
-          });
+  // ── Load / Refresh Workspace Tree ───────────────────────────
+  const loadWorkspace = useCallback(async (): Promise<FileNode | null> => {
+    try {
+      const tree = await invoke<FileNode>("get_file_tree");
+      setRootNode(tree);
+      return tree;
+    } catch (err) {
+      console.error("Failed to load workspace:", err);
+      return null;
+    }
+  }, []);
 
-          // Refresh the tree to include the new file
-          const tree = await invoke<FileEntry[]>("list_markdown_files", {
-            rootDir,
-          });
-          setFileTree(tree);
-
-          // Extract pure file name from path
-          const pureName = newPath.split(/[\\/]/).pop() || name;
-          await handleFileSelect(newPath, pureName);
-        } else {
-          // If no folder is open yet, show a native Save Dialog to pick location
-          const chosenPath = await save({
-            title: "Create New Markdown Note",
-            defaultPath: fileName ? fileName : "Untitled.md",
-            filters: [{ name: "Markdown", extensions: ["md"] }],
-          });
-
-          if (chosenPath && typeof chosenPath === "string") {
-            const pureName = chosenPath.split(/[\\/]/).pop() || "Untitled.md";
-            const initialTitle = pureName.replace(/\.md$/i, "");
-            const initialContent = `# ${initialTitle}\n\n`;
-
-            await invoke("save_markdown_file", {
-              filePath: chosenPath,
-              content: initialContent,
-            });
-
-            // Set parent folder as rootDir
-            const parentDirectory = chosenPath.replace(/[\\/][^\\/]+$/, "");
-            setRootDir(parentDirectory);
-
-            const tree = await invoke<FileEntry[]>("list_markdown_files", {
-              rootDir: parentDirectory,
-            });
-            setFileTree(tree);
-
-            await handleFileSelect(chosenPath, pureName);
+  // ── Auto-load on Mount & Open Welcome.md if available ────────
+  useEffect(() => {
+    loadWorkspace().then((tree) => {
+      if (tree) {
+        // Look for Welcome.md or the first .md file
+        const findFirstMd = (node: FileNode): FileNode | null => {
+          if (!node.is_dir && node.name.toLowerCase().endsWith(".md")) {
+            return node;
           }
+          for (const child of node.children) {
+            const found = findFirstMd(child);
+            if (found) return found;
+          }
+          return null;
+        };
+
+        const welcome = tree.children.find(
+          (c) => !c.is_dir && c.name.toLowerCase() === "welcome.md",
+        );
+        const target = welcome || findFirstMd(tree);
+        if (target) {
+          handleFileSelect(target.path, target.name);
         }
-      } catch (err) {
-        console.error("Failed to create file:", err);
-        throw err;
+      }
+    });
+  }, [loadWorkspace, handleFileSelect]);
+
+  // ── Create File ─────────────────────────────────────────────
+  const handleCreateFile = useCallback(
+    async (folderPath: string, fileName: string) => {
+      const rootPath = rootNode?.path ?? "C:\\mdapp\\mddata";
+      let relPath: string;
+
+      if (folderPath.startsWith(rootPath)) {
+        const sub = folderPath.slice(rootPath.length).replace(/^[\\/]+/, "");
+        relPath = sub ? `${sub}\\${fileName}` : fileName;
+      } else {
+        relPath = fileName;
+      }
+
+      await invoke("create_file", { relativePath: relPath });
+      const tree = await loadWorkspace();
+
+      // Compute expected target path and auto-open
+      const cleanFileName = fileName.toLowerCase().endsWith(".md")
+        ? fileName
+        : `${fileName}.md`;
+      const expectedPath = `${folderPath.replace(/[\\/]+$/, "")}\\${cleanFileName}`;
+
+      if (tree) {
+        await handleFileSelect(expectedPath, cleanFileName);
       }
     },
-    [rootDir, handleFileSelect],
+    [rootNode, loadWorkspace, handleFileSelect],
+  );
+
+  // ── Create Folder ───────────────────────────────────────────
+  const handleCreateFolder = useCallback(
+    async (folderPath: string, folderName: string) => {
+      const rootPath = rootNode?.path ?? "C:\\mdapp\\mddata";
+      let relPath: string;
+
+      if (folderPath.startsWith(rootPath)) {
+        const sub = folderPath.slice(rootPath.length).replace(/^[\\/]+/, "");
+        relPath = sub ? `${sub}\\${folderName}` : folderName;
+      } else {
+        relPath = folderName;
+      }
+
+      await invoke("create_folder", { relativePath: relPath });
+      await loadWorkspace();
+    },
+    [rootNode, loadWorkspace],
+  );
+
+  // ── Delete Entry ────────────────────────────────────────────
+  const handleDeleteEntry = useCallback(
+    async (path: string) => {
+      // If deleted file is active, close it
+      if (activeFile && (activeFile === path || activeFile.startsWith(path))) {
+        setActiveFile(null);
+        setActiveFileName("");
+        setMarkdown("");
+        setSaveStatus("idle");
+      }
+
+      await invoke("delete_entry", { path });
+      await loadWorkspace();
+    },
+    [activeFile, loadWorkspace],
   );
 
   // ── Locate in Windows Explorer ───────────────────────────────
-  const handleLocateFile = useCallback(async (filePath?: string | null) => {
-    const target = filePath || activeFile;
+  const handleLocate = useCallback(async (path?: string | null) => {
+    const target = path || activeFile;
     if (!target) return;
     try {
       await invoke("reveal_in_explorer", { filePath: target });
     } catch (err) {
-      console.error("Failed to locate file in explorer:", err);
+      console.error("Failed to locate in explorer:", err);
     }
   }, [activeFile]);
 
@@ -170,17 +181,21 @@ export default function App() {
     }
   }, [activeFile]);
 
-  // ── Keyboard Shortcut: Ctrl+N for New File ─────────────────
+  // ── Keyboard Shortcut: Ctrl+N for New File in Root ─────────
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        handleCreateFile();
+        const rootPath = rootNode?.path ?? "C:\\mdapp\\mddata";
+        const noteName = prompt("Enter new note name:", "Untitled.md");
+        if (noteName && noteName.trim()) {
+          handleCreateFile(rootPath, noteName.trim());
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleCreateFile]);
+  }, [rootNode, handleCreateFile]);
 
   // ── Auto-save (debounced 500ms) ─────────────────────────────
   const handleContentChange = useCallback(
@@ -190,12 +205,10 @@ export default function App() {
       setMarkdown(newMarkdown);
       setSaveStatus("unsaved");
 
-      // Clear existing timer
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
       }
 
-      // Debounce: write to disk after 500ms of inactivity
       saveTimerRef.current = setTimeout(async () => {
         setSaveStatus("saving");
         try {
@@ -226,14 +239,14 @@ export default function App() {
   return (
     <div className="app-layout">
       <Sidebar
-        fileTree={fileTree}
+        rootNode={rootNode}
         activeFile={activeFile}
-        onOpenFolder={handleOpenFolder}
         onFileSelect={handleFileSelect}
-        onRefresh={refreshTree}
+        onRefresh={loadWorkspace}
         onCreateFile={handleCreateFile}
-        onLocateFile={handleLocateFile}
-        rootDir={rootDir}
+        onCreateFolder={handleCreateFolder}
+        onDeleteEntry={handleDeleteEntry}
+        onLocate={handleLocate}
       />
 
       <div className="main-content">
@@ -250,7 +263,7 @@ export default function App() {
               {/* Locate in Explorer Action Button */}
               <button
                 className="titlebar-locate-btn"
-                onClick={() => handleLocateFile(activeFile)}
+                onClick={() => handleLocate(activeFile)}
                 title="Locate file in Windows File Explorer"
               >
                 <ExternalLink size={12} />
@@ -263,7 +276,11 @@ export default function App() {
                 onClick={handleCopyPath}
                 title="Copy absolute file path"
               >
-                {pathCopied ? <Check size={12} style={{ color: "var(--success)" }} /> : <Copy size={12} />}
+                {pathCopied ? (
+                  <Check size={12} style={{ color: "var(--success)" }} />
+                ) : (
+                  <Copy size={12} />
+                )}
                 <span>{pathCopied ? "Copied!" : "Copy Path"}</span>
               </button>
             </div>
@@ -297,23 +314,20 @@ export default function App() {
             </div>
             <h2>No note selected</h2>
             <p>
-              Create a new note or open an existing directory of <code>.md</code> files.
+              Select a note from <code>C:\mdapp\mddata</code> in the sidebar, or create a new note.
             </p>
 
             <div className="empty-state-buttons">
               <button
                 className="primary-action-btn empty-btn"
-                onClick={() => handleCreateFile()}
+                onClick={() => {
+                  const rootPath = rootNode?.path ?? "C:\\mdapp\\mddata";
+                  const name = prompt("Note name:", "NewNote.md");
+                  if (name) handleCreateFile(rootPath, name);
+                }}
               >
                 <Plus size={16} />
                 <span>Create New Note</span>
-              </button>
-              <button
-                className="secondary-action-btn empty-btn"
-                onClick={handleOpenFolder}
-              >
-                <FolderOpen size={16} />
-                <span>Open Folder</span>
               </button>
             </div>
 

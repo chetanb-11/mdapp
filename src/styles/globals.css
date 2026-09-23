@@ -89,7 +89,7 @@ html, body, #root {
 }
 
 .sidebar-header {
-  padding: 14px 14px 12px;
+  padding: 14px 14px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   display: flex;
@@ -97,27 +97,63 @@ html, body, #root {
   gap: 10px;
 }
 
-.sidebar-title-row {
+.sidebar-workspace-info {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
-.sidebar-title-row h1 {
+.workspace-icon-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-muted);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.workspace-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workspace-text h1 {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-title-row h1 svg {
-  color: var(--accent);
+.workspace-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -184,8 +220,8 @@ html, body, #root {
 }
 
 .icon-action-btn {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -257,74 +293,13 @@ html, body, #root {
   color: var(--text-primary);
 }
 
-/* ── Inline New File Input ────────────────────────────────────── */
-.inline-create-box {
-  padding: 6px 10px;
-  margin: 4px 8px 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.inline-create-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.inline-create-row .create-icon {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.inline-create-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  outline: none;
-  min-width: 0;
-}
-
-.inline-confirm-btn,
-.inline-cancel-btn {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.inline-confirm-btn {
-  background: var(--accent);
-  color: #fff;
-}
-
-.inline-confirm-btn:hover {
-  background: var(--accent-hover);
-}
-
-.inline-cancel-btn {
-  background: transparent;
-  color: var(--text-muted);
-}
-
-.inline-cancel-btn:hover {
+.sidebar-error-banner {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
   color: var(--danger);
-}
-
-.inline-create-error {
-  margin-top: 4px;
   font-size: 11px;
-  color: var(--danger);
-  line-height: 1.3;
 }
 
 .sidebar-tree {
@@ -355,12 +330,11 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px 5px calc(12px + var(--depth, 0) * 16px);
+  padding: 5px 10px 5px calc(10px + var(--depth, 0) * 14px);
   cursor: pointer;
   font-size: 13px;
   color: var(--text-secondary);
   transition: all var(--transition-fast);
-  border-radius: 0;
   user-select: none;
   position: relative;
   white-space: nowrap;
@@ -376,6 +350,7 @@ html, body, #root {
 .tree-item.active {
   background: var(--accent-muted);
   color: var(--accent);
+  font-weight: 500;
 }
 
 .tree-item.active::before {
@@ -389,6 +364,11 @@ html, body, #root {
   border-radius: 0 2px 2px 0;
 }
 
+.tree-item.is-dir {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 .tree-item-icon {
   flex-shrink: 0;
   width: 16px;
@@ -400,10 +380,23 @@ html, body, #root {
 
 .tree-item-icon.chevron {
   transition: transform var(--transition-fast);
+  color: var(--text-muted);
+}
+
+.tree-item-icon.chevron:hover {
+  color: var(--text-primary);
 }
 
 .tree-item-icon.chevron.expanded {
   transform: rotate(90deg);
+}
+
+.tree-item-icon.folder-icon {
+  color: var(--accent);
+}
+
+.tree-item-icon.file-icon {
+  color: var(--text-muted);
 }
 
 .tree-item-name {
@@ -413,8 +406,30 @@ html, body, #root {
   flex: 1;
 }
 
-.tree-item-action-btn {
+.tree-item-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  padding: 1px 5px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-right: 4px;
+}
+
+.tree-item-actions {
   display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.tree-item:hover .tree-item-actions {
+  display: flex;
+}
+
+.tree-action-btn {
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 20px;
@@ -422,25 +437,88 @@ html, body, #root {
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--text-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
-  flex-shrink: 0;
-  margin-left: auto;
 }
 
-.tree-item:hover .tree-item-action-btn {
-  display: flex;
-}
-
-.tree-item-action-btn:hover {
+.tree-action-btn:hover {
   background: var(--bg-elevated);
   color: var(--accent);
 }
 
+.tree-action-btn.danger:hover {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+}
+
+.tree-empty-folder {
+  padding: 4px 0 4px 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .tree-children {
   overflow: hidden;
+}
+
+/* ── Inline Creation Row ──────────────────────────────────────── */
+.inline-create-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 0;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+
+.create-type-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.inline-create-field {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.inline-action-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.inline-action-btn.confirm {
+  background: var(--accent);
+  color: #fff;
+}
+
+.inline-action-btn.confirm:hover {
+  background: var(--accent-hover);
+}
+
+.inline-action-btn.cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.inline-action-btn.cancel:hover {
+  color: var(--danger);
 }
 
 /* ── Resize Handle ────────────────────────────────────────────── */
